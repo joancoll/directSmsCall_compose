@@ -9,7 +9,7 @@ import android.widget.Toast
 fun sendSms(context: Context, phoneNumber: String, message: String) {
     Toast.makeText(context, "Enviant SMS a $phoneNumber", Toast.LENGTH_SHORT).show()
     try {
-        val smsManager = SmsManager.getDefault()
+        val smsManager = context.getSystemService(SmsManager::class.java)
         smsManager.sendTextMessage(phoneNumber, null, message, null, null)
     } catch (e: Exception) {
         Toast.makeText(context, "Error enviant SMS: ${e.message}", Toast.LENGTH_LONG).show()
