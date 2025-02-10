@@ -9,19 +9,17 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import cat.dam.andy.directsmscall_compose.permissions.PermissionData
+import cat.dam.andy.directsmscall_compose.R
 import cat.dam.andy.directsmscall_compose.permissions.PermissionManager
 import cat.dam.andy.directsmscall_compose.utils.initiateCall
 import cat.dam.andy.directsmscall_compose.utils.sendSms
 
 @Composable
-fun SmsCallScreen(permissionManager: PermissionManager) {
+fun SmsCallScreen(context: Context, permissionManager: PermissionManager) {
     var phoneNumber by rememberSaveable { mutableStateOf("") }
     var message by rememberSaveable { mutableStateOf("") }
-    val context = LocalContext.current
-    val isLandscape = LocalContext.current.resources.configuration.orientation == 2
+    val isLandscape = context.resources.configuration.orientation == 2
     Column(
         modifier = Modifier
             .systemBarsPadding()
@@ -71,11 +69,21 @@ fun SmsCallScreen(permissionManager: PermissionManager) {
             context = context,
             modifier = Modifier.fillMaxWidth()
         )
+        // Mostrar el diàleg de permisos quan sigui necessari
+        permissionManager.ShowPermissionDialog(
+            title = context.getString(R.string.permissionRequired),
+            confirm = context.getString(R.string.ok),
+            cancel = context.getString(R.string.cancel)
+        )
     }
 }
 
 @Composable
-fun PhoneNumberField(phoneNumber: String, onPhoneNumberChange: (String) -> Unit, modifier: Modifier = Modifier) {
+fun PhoneNumberField(
+    phoneNumber: String,
+    onPhoneNumberChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
     TextField(
         value = phoneNumber,
         onValueChange = onPhoneNumberChange,
@@ -86,7 +94,11 @@ fun PhoneNumberField(phoneNumber: String, onPhoneNumberChange: (String) -> Unit,
 }
 
 @Composable
-fun MessageField(message: String, onMessageChange: (String) -> Unit, modifier: Modifier = Modifier) {
+fun MessageField(
+    message: String,
+    onMessageChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
     TextField(
         value = message,
         onValueChange = onMessageChange,
@@ -111,13 +123,9 @@ fun ActionButtons(
                 if (permissionManager.hasPermission(android.Manifest.permission.SEND_SMS)) {
                     sendSms(context, phoneNumber, message)
                 } else {
-                    permissionManager.askForPermissionWithDialog(
-                        PermissionData(
-                            android.Manifest.permission.SEND_SMS,
-                            "Es necessita permís per enviar SMS.",
-                            "Permís per enviar SMS concedit!",
-                            "Permís per enviar SMS denegat permanentment. Si us plau, activa el permís manualment a la configuració de l'aplicació."
-                        )
+                    permissionManager.askForPermission(
+                        context,
+                        android.Manifest.permission.SEND_SMS
                     )
                 }
             }
@@ -131,13 +139,9 @@ fun ActionButtons(
                 if (permissionManager.hasPermission(android.Manifest.permission.CALL_PHONE)) {
                     initiateCall(context, phoneNumber)
                 } else {
-                    permissionManager.askForPermissionWithDialog(
-                        PermissionData(
-                            android.Manifest.permission.CALL_PHONE,
-                            "Es necessita permís per realitzar trucades.",
-                            "Permís per trucar concedit!",
-                            "Permís per trucar denegat permanentment. Si us plau, activa el permís manualment a la configuració de l'aplicació."
-                        )
+                    permissionManager.askForPermission(
+                        context,
+                        android.Manifest.permission.CALL_PHONE
                     )
                 }
             }

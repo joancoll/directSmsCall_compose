@@ -1,7 +1,6 @@
 package cat.dam.andy.directsmscall_compose.permissions
 
-import android.app.AlertDialog
-import android.content.DialogInterface
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -10,193 +9,127 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.app.ActivityCompat
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import kotlinx.coroutines.flow.MutableStateFlow
 
-class PermissionManager(private val activityContext: ComponentActivity) {
+class PermissionManager(private val activity: ComponentActivity) {
 
-    private val permissionsRequired = mutableListOf<PermissionData>()
-    private var singlePermissionResultLauncher: ActivityResultLauncher<String>? = null
-    private var multiplePermissionResultLauncher: ActivityResultLauncher<Array<String>>? = null
 
-    init {
-        initPermissionLaunchers()
-    }
 
-    private fun initPermissionLaunchers() {
-        singlePermissionResultLauncher =
-            activityContext.registerForActivityResult(
-                ActivityResultContracts.RequestPermission()
-            ) { isGranted ->
-                handlePermissionResult(isGranted)
-            }
-
-        multiplePermissionResultLauncher =
-            activityContext.registerForActivityResult(
-                ActivityResultContracts.RequestMultiplePermissions()
-            ) { permissions ->
-                handleMultiplePermissionsResult(permissions)
-            }
-    }
-
-    private fun handlePermissionResult(isGranted: Boolean) {
-        if (isGranted) {
-            // Find the permission data for the granted permission
-            val permissionData = permissionsRequired.firstOrNull {
-                it.permission == singlePermissionResultLauncher?.contract?.createIntent(
-                    activityContext,
-                    it.permission
-                )?.extras?.getString("android.intent.extra.PERMISSION_NAME")
-            }
-            permissionData?.let {
-                showToast(it.permissionGrantedMessage)
-            }
-        } else {
-            // Find the permission data for the denied permission
-            val permissionData = permissionsRequired.firstOrNull {
-                it.permission == singlePermissionResultLauncher?.contract?.createIntent(
-                    activityContext,
-                    it.permission
-                )?.extras?.getString("android.intent.extra.PERMISSION_NAME")
-            }
-            permissionData?.let {
-                if (!ActivityCompat.shouldShowRequestPermissionRationale(
-                        activityContext,
-                        it.permission
-                    )
-                ) {
-                    // Permanent denial: redirect to settings
-                    showAlert(
-                        it.permissionPermanentDeniedMessage,
-                        { _, _ -> openAppSettings() },
-                        { dialogInterface, _ -> dialogInterface.dismiss() }
-                    )
-                } else {
-                    // Temporary denial: show rationale and ask again
-                    showAlert(
-                        it.permissionNeededMessage,
-                        { _, _ -> singlePermissionResultLauncher?.launch(it.permission) },
-                        { dialogInterface, _ -> dialogInterface.dismiss() }
-                    )
-                }
-            }
+    private val _permissionsState = MutableStateFlow<List<PermissionData>>(emptyList())
+    private val permissions = mutableListOf<PermissionData>()
+    private val activityResultLauncher: ActivityResultLauncher<String> =
+        activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { result ->
+            handlePermissionResult(currentPermission, result)
         }
-    }
 
-    private fun handleMultiplePermissionsResult(permissions: Map<String, Boolean>) {
-        permissions.forEach { (permission, isGranted) ->
-            val permissionData = permissionsRequired.firstOrNull { it.permission == permission }
-            permissionData?.let {
-                if (isGranted) {
-                    showToast(it.permissionGrantedMessage)
-                } else {
-                    if (!ActivityCompat.shouldShowRequestPermissionRationale(
-                            activityContext,
-                            permission
-                        )
-                    ) {
-                        // Permanent denial: redirect to settings
-                        showAlert(
-                            it.permissionPermanentDeniedMessage,
-                            { _, _ -> openAppSettings() },
-                            { dialogInterface, _ -> dialogInterface.dismiss() }
-                        )
-                    } else {
-                        // Temporary denial: show rationale and ask again
-                        showAlert(
-                            it.permissionNeededMessage,
-                            { _, _ -> multiplePermissionResultLauncher?.launch(arrayOf(it.permission)) },
-                            { dialogInterface, _ -> dialogInterface.dismiss() }
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    private fun showToast(message: String) {
-        Toast.makeText(activityContext, message, Toast.LENGTH_SHORT).show()
-    }
-
-    private fun showAlert(
-        message: String,
-        positiveAction: (DialogInterface, Int) -> Unit,
-        negativeAction: (DialogInterface, Int) -> Unit
-    ) {
-        AlertDialog.Builder(activityContext)
-            .setMessage(message)
-            .setCancelable(true)
-            .setPositiveButton("Ok", positiveAction)
-            .setNegativeButton("Cancel", negativeAction)
-            .create()
-            .show()
-    }
-
-    private fun openAppSettings() {
-        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-        val uri = Uri.fromParts("package", activityContext.packageName, null)
-        intent.data = uri
-        activityContext.startActivity(intent)
-    }
+    private var currentPermission: PermissionData? = null
+    private var showDialog by mutableStateOf(false)
+    private var dialogMessage by mutableStateOf("")
+    private var onPositiveAction: (() -> Unit)? = null
+    private var onNegativeAction: (() -> Unit)? = null
 
     fun addPermission(
         permission: String,
-        permissionNeededMessage: String,
-        permissionGrantedMessage: String,
-        permissionPermanentDeniedMessage: String
+        permissionInfo: String,
+        grantedMessage: String,
+        deniedMessage: String,
+        permanentDeniedMessage: String
     ) {
-        permissionsRequired.add(
+        permissions.add(
             PermissionData(
                 permission,
-                permissionNeededMessage,
-                permissionGrantedMessage,
-                permissionPermanentDeniedMessage
+                permissionInfo,
+                grantedMessage,
+                deniedMessage,
+                permanentDeniedMessage
             )
         )
+        _permissionsState.value = permissions.toList()
     }
 
-    fun askForPermissionWithDialog(permission: PermissionData) {
-        val isGranted = ActivityCompat.checkSelfPermission(
-            activityContext,
-            permission.permission
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (isGranted) {
-            // If permission is already granted
-            showToast(permission.permissionGrantedMessage)
-        } else {
-            // If permission is not granted, show the dialog with explanation
-            if (ActivityCompat.shouldShowRequestPermissionRationale(
-                    activityContext,
-                    permission.permission
-                )
-            ) {
-                showAlert(
-                    permission.permissionNeededMessage,
-                    { _, _ -> singlePermissionResultLauncher?.launch(permission.permission) },
-                    { dialogInterface, _ -> dialogInterface.dismiss() }
-                )
+    fun askForPermission(context: Context, permission: String) {
+        val permissionData = permissions.find { it.permission == permission }
+        if (permissionData != null) {
+            currentPermission = permissionData
+            if (activity.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(context, permissionData.grantedMessage, Toast.LENGTH_SHORT).show()
             } else {
-                singlePermissionResultLauncher?.launch(permission.permission)
+                activityResultLauncher.launch(permission)
             }
         }
     }
 
-    fun askForAllNeededPermissions() {
-        val permissions = permissionsRequired.map { it.permission }.toTypedArray()
-        multiplePermissionResultLauncher?.launch(permissions)
+    fun hasPermission(permission: String): Boolean {
+        return activity.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
     }
 
-    fun hasPermission(permission: String): Boolean {
-        return ActivityCompat.checkSelfPermission(
-            activityContext,
-            permission
-        ) == PackageManager.PERMISSION_GRANTED
+    private fun handlePermissionResult(permissionData: PermissionData?, isGranted: Boolean) {
+        if (permissionData == null) return
+        if (isGranted) {
+            Toast.makeText(activity, permissionData.grantedMessage, Toast.LENGTH_SHORT).show()
+        } else {
+            if (activity.shouldShowRequestPermissionRationale(permissionData.permission)) {
+                showDialog(permissionData.deniedMessage)
+            } else {
+                showDialog(
+                    permissionData.permanentDeniedMessage,
+                    positiveAction = {
+                        openAppSettings() // Obrir configuració quan es prem el botó d'acció
+                    }
+                )
+            }
+        }
+    }
+
+    private fun openAppSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", activity.packageName, null)
+        }
+        activity.startActivity(intent)
+    }
+
+    private fun showDialog(
+        message: String,
+        positiveAction: (() -> Unit)? = null,
+        negativeAction: (() -> Unit)? = {
+            // Tancar el diàleg
+            showDialog = false
+        }
+    ) {
+        dialogMessage = message
+        onPositiveAction = positiveAction
+        onNegativeAction = negativeAction
+        showDialog = true
+    }
+
+    @Composable
+    fun ShowPermissionDialog(title: String, confirm: String, cancel: String) {
+        if (showDialog) {
+            AlertDialog(
+                onDismissRequest = { showDialog = false },
+                title = { Text(title) },
+                text = { Text(dialogMessage) },
+                confirmButton = {
+                    Button(onClick = {
+                        onPositiveAction?.invoke()
+                        showDialog = false
+                    }) {
+                        Text(confirm)
+                    }
+                },
+                dismissButton = {
+                    Button(onClick = {
+                        onNegativeAction?.invoke()
+                        showDialog = false
+                    }) {
+                        Text(cancel)
+                    }
+                }
+            )
+        }
     }
 }
-
-data class PermissionData(
-    val permission: String,
-    val permissionNeededMessage: String,
-    val permissionGrantedMessage: String,
-    val permissionPermanentDeniedMessage: String
-)
